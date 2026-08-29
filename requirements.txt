@@ -1,0 +1,7 @@
+requests>=2.31.0
+openai>=1.30.0
+python-dotenv>=1.0.0
+schedule>=1.2.0
+tenacity>=8.2.0
+# NOTE: MT5 deps (mt5linux / Wine bridge) are installed ONLY in the MT5 image
+# (Dockerfile.mt5), so the plain Binance image stays untouched.

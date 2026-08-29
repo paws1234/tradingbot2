@@ -1,0 +1,55 @@
+# MetaTrader 5 runtime — EVERYTHING in Docker (Layout B).
+#
+# Contains Wine + Xvfb + VNC + Windows Python + the MT5 terminal (installed
+# under Wine on first run) + mt5_bridge.py (runs under WINE Python with the
+# OFFICIAL Windows MetaTrader5 package) + the bot. The bridge exposes a tiny
+# HTTP API that mt5_venue.py (Linux bot) calls.
+#
+# One-time demo login: connect to VNC at localhost:5901 (no password) and log
+# the MT5 terminal into your demo account if the auto-login doesn't complete.
+#
+# Build/run: docker compose -f docker-compose.mt5.yml up -d --build
+FROM python:3.12-slim
+
+WORKDIR /app
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DISPLAY=:99 \
+    WINEDEBUG=-all
+
+# Wine (amd64), Xvfb and VNC for the headless MT5 terminal. We use the 64-bit
+# Windows Python embeddable zip (no 32-bit NSIS stub), so wine32 is NOT needed.
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        wine \
+        xvfb \
+        x11vnc \
+        novnc \
+        websockify \
+        x11-utils \
+        cabextract \
+        unzip \
+        wget \
+        procps \
+        && rm -rf /var/lib/apt/lists/*
+
+# Bot Python deps.
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Application source.
+COPY . .
+
+# Cache the Windows Python embeddable zip (used by the entrypoint on first run).
+ARG PYVER=3.12.4
+RUN wget -q "https://www.python.org/ftp/python/${PYVER}/python-${PYVER}-embed-amd64.zip" \
+        -O /opt/python-embed.zip || echo "WARNING: could not download Windows Python embed"
+
+# Persist the Wine prefix (Windows Python + terminal install + demo login).
+VOLUME ["/root/.wine"]
+
+COPY docker/mt5_entrypoint.sh /usr/local/bin/mt5_entrypoint.sh
+RUN chmod +x /usr/local/bin/mt5_entrypoint.sh
+
+CMD ["/usr/local/bin/mt5_entrypoint.sh"]

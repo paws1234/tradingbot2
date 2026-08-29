@@ -1,0 +1,30 @@
+# Alternate compose file — the MT5 setup runs ENTIRELY in Docker (Layout B):
+# Wine + Xvfb + VNC + Windows Python + the MT5 terminal + mt5_bridge.py + the bot
+# in ONE container. The Binance swing/scalping setups are unchanged and work here.
+#
+# One-time demo login: open VNC at localhost:5901 (no password), log the MT5
+# terminal into your demo account (the bridge also auto-logs-in via MT5_* env).
+#
+# Run with:
+#   docker compose -f docker-compose.mt5.yml up -d --build
+# Switch back to Binance-only with:
+#   docker compose up -d --build
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.mt5
+    container_name: pythonbot2-mt5
+    restart: unless-stopped
+    environment:
+      MT5_BRIDGE_URL: "http://localhost:18080"   # the in-container Wine-Python bridge
+    env_file:
+      - .env
+    ports:
+      - "5901:5901"        # VNC — one-time MT5 demo login / watch the terminal
+      - "6080:6080"        # noVNC — same, but in a browser (vnc.html)
+    volumes:
+      - ./logs:/app/logs
+      - mt5_wine:/root/.wine   # persist Wine prefix (Python + terminal + login)
+volumes:
+  mt5_wine:

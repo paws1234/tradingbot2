@@ -1,0 +1,10 @@
+# Secrets — never commit your real keys
+.env
+
+# Runtime logs
+logs/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
