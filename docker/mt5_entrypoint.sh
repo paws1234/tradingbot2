@@ -102,6 +102,29 @@ if [ -z "$TERMINAL" ]; then
   fi
 fi
 
+# 5b. Force the terminal config to allow algo trading + Python API on every boot.
+#     `[Experts] Api=1` is required for the bridge to attach (-10005 IPC timeout);
+#     `[Experts] Enabled=1` is the Algo Trading button — when off, every
+#     order_send returns retcode 10027 "AutoTrading disabled by client" even
+#     though attach/login work. MT5 self-updates and fresh installs reset both,
+#     so enforce them BEFORE the terminal starts (it restores the button from
+#     this file at launch). Idempotent: no-op when already 1.
+CFG="${TERMINAL%/terminal64.exe}/Config/common.ini"
+if [ -n "$TERMINAL" ] && [ -f "$CFG" ]; then
+  python - "$CFG" <<'PY' || echo "[mt5] WARNING: could not patch $CFG"
+import codecs, sys
+p = sys.argv[1]
+try:
+    data = codecs.open(p, encoding="utf-16").read()
+except Exception:
+    sys.exit(1)
+out = data.replace("Api=0", "Api=1").replace("Enabled=0", "Enabled=1")
+if out != data:
+    codecs.open(p, "w", encoding="utf-16").write(out)
+    print("[mt5] patched [Experts] Api=1 Enabled=1 in common.ini")
+PY
+fi
+
 # 6. Start the terminal (portable) so the bridge can attach.
 if [ -n "$TERMINAL" ]; then
   echo "[mt5] Starting MT5 terminal: $TERMINAL"
