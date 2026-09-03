@@ -102,26 +102,57 @@ if [ -z "$TERMINAL" ]; then
   fi
 fi
 
-# 5b. Force the terminal config to allow algo trading + Python API on every boot.
-#     `[Experts] Api=1` is required for the bridge to attach (-10005 IPC timeout);
-#     `[Experts] Enabled=1` is the Algo Trading button — when off, every
-#     order_send returns retcode 10027 "AutoTrading disabled by client" even
-#     though attach/login work. MT5 self-updates and fresh installs reset both,
-#     so enforce them BEFORE the terminal starts (it restores the button from
-#     this file at launch). Idempotent: no-op when already 1.
+# 5b. Force the terminal config to allow algo trading AND external-Python-API
+#     trading on every boot. Options > Expert Advisors in this build exposes five
+#     checkboxes that map 1:1 to [Experts] keys in common.ini:
+#       Enabled        -> "Allow algorithmic trading"
+#       Api            -> "Disable algorithmic trading via external Python API"
+#                          (NOTE: Api=1 == BOX CHECKED == the Python bridge's
+#                          order_send is REJECTED with 10027 "AutoTrading
+#                          disabled by client" — NOT a permission to attach.
+#                          Attach works fine with Api=0.)
+#       Account/Profile/Chart -> "Disable algo when the account/profile/symbol
+#                          changes" — the bridge re-logs-in (account change), so
+#                          if these stay 1 the terminal silently turns algo back
+#                          OFF. Force all three to 0.
+#     MT5 self-updates and fresh installs can re-check the API-disable box
+#     (secure default), so normalize the section BEFORE the terminal starts (it
+#     reads this file at launch). Idempotent: no-op when already normalized.
+#     (Historical note: an earlier version forced Api=1 believing it enabled the
+#     Python bridge — it actually re-imposed the 10027 block on every restart.)
 CFG="${TERMINAL%/terminal64.exe}/Config/common.ini"
 if [ -n "$TERMINAL" ] && [ -f "$CFG" ]; then
   python - "$CFG" <<'PY' || echo "[mt5] WARNING: could not patch $CFG"
-import codecs, sys
+import codecs, re, sys
 p = sys.argv[1]
 try:
     data = codecs.open(p, encoding="utf-16").read()
 except Exception:
     sys.exit(1)
-out = data.replace("Api=0", "Api=1").replace("Enabled=0", "Enabled=1")
-if out != data:
-    codecs.open(p, "w", encoding="utf-16").write(out)
-    print("[mt5] patched [Experts] Api=1 Enabled=1 in common.ini")
+# Operate ONLY on the [Experts] section so other sections' keys are untouched.
+m = re.search(r"\[Experts\](.*?)(\n\s*\[[^\]]+\]|\Z)", data, re.S)
+if not m:
+    print("[mt5] no [Experts] section; leaving common.ini untouched")
+    sys.exit(0)
+nl = "\r\n" if "\r\n" in m.group(1) else "\n"
+sec = m.group(1)
+orig = sec
+# Value-only rewrite: replace the value on a matching key= line, PRESERVING the
+# line terminator; leave already-correct lines byte-identical (true no-op).
+DESIRED = (("Enabled", "1"), ("Api", "0"), ("Account", "0"),
+           ("Profile", "0"), ("Chart", "0"), ("AllowDllImport", "0"))
+for k, want in DESIRED:
+    pm = re.search(r"(?m)^" + re.escape(k) + r"=([^\r\n]*?)(\r?\n|$)", sec)
+    if pm and pm.group(1) != want:
+        sec = sec[:pm.start()] + k + "=" + want + pm.group(2) + sec[pm.end():]
+    elif not pm:
+        sec = sec.rstrip("\r\n") + nl + k + "=" + want
+if sec != orig:
+    data = data[:m.start(1)] + sec + data[m.end(1):]
+    codecs.open(p, "w", encoding="utf-16").write(data)
+    print("[mt5] normalized [Experts] Enabled=1 Api=0 Account=0 Profile=0 Chart=0 in common.ini")
+else:
+    print("[mt5] [Experts] already normalized")
 PY
 fi
 
